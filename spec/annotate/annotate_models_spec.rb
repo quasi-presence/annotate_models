@@ -182,6 +182,38 @@ EOS
       check_class_name 'bar/foo_inside_bar.rb', 'Bar::FooInsideBar'
     end
 
+    it "should find AR model when duplicated by a nested model" do
+      create 'foo.rb', <<-EOS
+        class Foo < ActiveRecord::Base
+        end
+      EOS
+
+      create 'bar/foo.rb', <<-EOS
+        class Bar::Foo
+        end
+      EOS
+      check_class_name 'bar/foo.rb', 'Bar::Foo'
+      check_class_name 'foo.rb', 'Foo'
+    end
+
+    it "should find AR model nested inside a class" do
+      create 'voucher.rb', <<-EOS
+        class Voucher < ActiveRecord::Base
+        end
+      EOS
+
+      create 'voucher/foo.rb', <<-EOS
+        class Voucher
+          class Foo
+          end
+        end
+      EOS
+
+      check_class_name 'voucher.rb', 'Voucher'
+      check_class_name 'voucher/foo.rb', 'Voucher::Foo'
+    end
+
+
     it "should not care about unknown macros" do
       create 'foo_with_macro.rb', <<-EOS
         class FooWithMacro < ActiveRecord::Base
@@ -469,8 +501,8 @@ end
     describe "if a file can't be annotated" do
        before do
          write_model('user.rb', <<-EOS)
-           class User < ActiveRecord::Base
-             raise "oops"
+           class Users < ActiveRecord::Base
+             raise "Expected user.rb to define User"
            end
          EOS
        end
@@ -478,7 +510,7 @@ end
        it "displays an error message" do
          capturing(:stdout) {
            AnnotateModels.do_annotations :model_dir => @model_dir, :is_rake => true
-         }.should include("Unable to annotate user.rb: oops")
+         }.should include("Unable to annotate user.rb: Expected user.rb to define User")
        end
 
        it "displays the full stack trace with --trace" do
@@ -498,7 +530,9 @@ end
        before do
          write_model('user.rb', <<-EOS)
            class User < ActiveRecord::Base
-             raise "oops"
+             def self.table_name
+               raise "oops"
+             end
            end
          EOS
        end
@@ -512,7 +546,7 @@ end
        it "displays the full stack trace" do
          capturing(:stdout) {
            AnnotateModels.remove_annotations :model_dir => @model_dir, :trace => true, :is_rake => true
-         }.should include("/user.rb:2:in `<class:User>'")
+         }.should include("/user.rb:3:in `table_name'")
        end
 
        it "omits the full stack trace without --trace" do

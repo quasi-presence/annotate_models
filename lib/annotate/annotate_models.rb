@@ -370,20 +370,32 @@ module AnnotateModels
     # in subdirectories without namespacing.
     def get_model_class(file)
       # this is for non-rails projects, which don't get Rails auto-require magic
-      require File.expand_path("#{model_dir}/#{file}")
+      require File.expand_path("#{model_dir}/#{file}") if requires_loading?(file)
       model_path = file.gsub(/\.rb$/, '')
       get_loaded_model(model_path) || get_loaded_model(model_path.split('/').last)
     end
 
+    # Only require loading if constant hasn't been defined
+    #   This helps avoid issues with classes that have already been
+    #   loaded and can't be reloaded (e.g. memoized classes)
+    def requires_loading?(file)
+      ActiveSupport::Inflector.classify(file.gsub(/\.rb$/, '')).safe_constantize.nil?
+    end
+
     # Retrieve loaded model class by path to the file where it's supposed to be defined.
     def get_loaded_model(model_path)
-      ObjectSpace.each_object(::Class).
-        select do |c|
-          Class === c and    # note: we use === to avoid a bug in activesupport 2.3.14 OptionMerger vs. is_a?
-          c.ancestors.respond_to?(:include?) and  # to fix FactoryGirl bug, see https://github.com/ctran/annotate_models/pull/82
-          c.ancestors.include?(ActiveRecord::Base)
-        end.
-        detect { |c| ActiveSupport::Inflector.underscore(c) == model_path }
+      begin        
+        ActiveSupport::Inflector.constantize(ActiveSupport::Inflector.camelize(model_path))
+      rescue 
+        # Revert to the old way but it is not really robust
+        ObjectSpace.each_object(::Class).
+          select do |c|
+            Class === c and    # note: we use === to avoid a bug in activesupport 2.3.14 OptionMerger vs. is_a?
+            c.ancestors.respond_to?(:include?) and  # to fix FactoryGirl bug, see https://github.com/ctran/annotate_models/pull/82
+            c.ancestors.include?(ActiveRecord::Base)
+          end.
+          detect { |c| ActiveSupport::Inflector.underscore(c) == model_path }
+      end
     end
 
     # We're passed a name of things that might be
